@@ -1,0 +1,120 @@
+#######################################
+# Syntax Coloring Map
+#######################################
+
+#######################################
+# Datatypes (KEYWORD1)
+#######################################
+
+Tlc5948	KEYWORD1
+Channels	KEYWORD1
+SidFlags	KEYWORD1
+Fctrls	KEYWORD1
+DataKind	KEYWORD1
+
+#######################################
+# Methods and Functions (KEYWORD2)
+#######################################
+
+begin	KEYWORD2
+exchangeData	KEYWORD2
+setDcData	KEYWORD2
+setBcData	KEYWORD2
+setGsData	KEYWORD2
+pushGsData	KEYWORD2
+setFctrlBits	KEYWORD2
+exchangeData	KEYWORD2
+getSidData	KEYWORD2
+startBuiltinGsclk	KEYWORD2
+stopBuiltinGsclk	KEYWORD2
+pulseLatch	KEYWORD2
+getFctrlBits	KEYWORD2
+printGsDataBuf	KEYWORD2
+printSpiBuf	KEYWORD2
+printCtrlDataBuf	KEYWORD2
+begin	KEYWORD2
+readDeviceContents	KEYWORD2
+
+######################################
+# Constants (LITERAL1)
+#######################################
+
+blank_mask	LITERAL1
+dsprpt_mask	LITERAL1
+tmgrst_mask	LITERAL1
+espwm_mask	LITERAL1
+lodvlt_mask	LITERAL1
+lsdvlt_mask	LITERAL1
+lattmg_mask	LITERAL1
+idmena_mask	LITERAL1
+idmrpt_mask	LITERAL1
+idmcur_mask	LITERAL1
+oldena_mask	LITERAL1
+psmode_mask	LITERAL1
+psmode_none	LITERAL1
+psmode_sclk	LITERAL1
+psmode_data	LITERAL1
+psmode_noclk	LITERAL1
+oldena_mode_0	LITERAL1
+oldena_mode_1	LITERAL1
+idmcur_mode_2ua	LITERAL1
+idmcur_mode_10ua	LITERAL1
+idmcur_mode_20ua	LITERAL1
+idmcur_mode_1ma	LITERAL1
+idmrpt_mode_0	LITERAL1
+idmrpt_mode_1	LITERAL1
+idmena_mode_0	LITERAL1
+idmena_mode_1	LITERAL1
+lattmg_mode_17	LITERAL1
+lattmg_mode_33	LITERAL1
+lattmg_mode_65	LITERAL1
+lattmg_mode_129	LITERAL1
+lsdvlt_mode_035	LITERAL1
+lsdvlt_mode_045	LITERAL1
+lsdvlt_mode_055	LITERAL1
+lsdvlt_mode_065	LITERAL1
+lodvlt_mode_03v	LITERAL1
+lodvlt_mode_06v	LITERAL1
+lodvlt_mode_09v	LITERAL1
+lodvlt_mode_12v	LITERAL1
+espwm_mode_0	LITERAL1
+espwm_mode_1	LITERAL1
+tmgrst_mode_0	LITERAL1
+tmgrst_mode_1	LITERAL1
+dsprpt_mode_0	LITERAL1
+dsprpt_mode_1	LITERAL1
+blank_mode_0	LITERAL1
+blank_mode_1	LITERAL1
+empty_bits	LITERAL1
+full_bits	LITERAL1
+none	LITERAL1
+chan_set	LITERAL1
+out0	LITERAL1
+out1	LITERAL1
+out2	LITERAL1
+out3	LITERAL1
+out4	LITERAL1
+out5	LITERAL1
+out6	LITERAL1
+out7	LITERAL1
+out8	LITERAL1
+out9	LITERAL1
+out10	LITERAL1
+out11	LITERAL1
+out12	LITERAL1
+out13	LITERAL1
+out14	LITERAL1
+out15	LITERAL1
+even	LITERAL1
+odd	LITERAL1
+all	LITERAL1
+upper8	LITERAL1
+lower8	LITERAL1
+NUM_CHANNELS	LITERAL1
+PWM_FREQ	LITERAL1
+MAX_BRIGHTNESSS	LITERAL1
+MIN_BRIGHTNESSS	LITERAL1
+gsdata	LITERAL1
+ctrldata	LITERAL1
+
+
