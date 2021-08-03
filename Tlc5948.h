@@ -3,15 +3,14 @@
 #include <SPI.h>
 
 // pin assignments; todo replace with enum maybe
-#ifdef ARDUINO_TEENSY41 // Teensy version
+#ifdef ARDUINO_TEENSY40 // Teensy version
 #warning "Using Teensy Pin Definitions"
-#error "Unimplemented"
-const int LAT = 0;   // latch control
-const int GSCLK = 0; // pwm clock
-const int SSEL = 0; // slave select, HW SS
-const int SIN = 0;   // serial data input (to Tlc5948)
-const int SOUT = 0;  // serial data output (from Tlc5948) 
-const int SCLK = 0;  // serial data clock
+const int LAT = 7;   // latch control
+const int GSCLK = 2; // pwm clock, using pin 2
+const int SSEL = 10; // slave select, HW SS, not needed
+const int SIN = 11;   // serial data input (to Tlc5948)
+const int SOUT = 12;  // serial data output (from Tlc5948) 
+const int SCLK = 13;  // serial data clock
 #else // assume Arduino Nano
 #warning "Using Arduino Nano Pin Definitions"
 const int LAT = 3;   // latch control, using D3
@@ -20,10 +19,10 @@ const int SSEL = 10; // slave select, HW SS, not needed
 const int SIN = 11;   // serial data input (to Tlc5948) HW MOSI, using D11
 const int SOUT = 12;  // serial data output (from Tlc5948)  HW MISO, using D12
 const int SCLK = 13;  // HW SCLK, using D13
-#endif // ifdef ARDUINO_TEENSY41
+#endif // ifdef ARDUINO_TEENSY40
 
 // SPI settings
-const uint32_t SPI_SPEED = 33000000; // 33mhz listed on data sheet, more like 
+const uint32_t SPI_SPEED = 1000000;// 33mhz listed on data sheet, 1Mhz seems to work
 const unsigned int BIT_ORDER = MSBFIRST;
 const unsigned int SPI_MODE = SPI_MODE0;
 const int NUM_CHANNELS = 16;
@@ -238,17 +237,17 @@ inline void printFctrls(Fctrls f) {
     Serial.println((f & Fctrls::psmode_mask)>>15,HEX);
 }
 
-enum class DataKind { gsdata, ctrldata, none };
-
 class Tlc5948 {
     public:
         void setDcData(Channels,uint8_t);
         void setBcData(uint8_t);
-        void setGsData(Channels,uint16_t);
-        uint8_t pushGsData(uint16_t);
         void setFctrlBits(Fctrls);
 
-        void exchangeData(DataKind, uint8_t numTlcs = 1); // SPI mode
+        //void exchangeData(DataKind, uint8_t numTlcs = 1); // SPI mode
+        void writeControlBuffer(uint8_t numTlcs = 1);
+        void writeGsBuffer(uint8_t*buff, uint16_t numBytes, bool = false);
+        void emptyGsBuffer(uint16_t numBytes);
+        void fillGsBuffer(uint16_t numBytes, uint8_t val);
         SidFlags getSidData(Channels&,Channels&,Channels&,bool = false);
 
         void startBuiltinGsclk();
@@ -268,12 +267,22 @@ class Tlc5948 {
     private:
         SidFlags sidStatus;
         Fctrls funcControlBits;
-        uint8_t gsDataBuf[32];
-        uint8_t ctrlDataBuf[32];
-        uint8_t spiBuf[32];
+        uint8_t ctrlDataBuf[32] = { 0 };
 
 };
 
+#if ARDUINO_TEENSY40
+// use fast versions 
+inline void pulse_high(int pinNum) { // ___----___
+    digitalWriteFast(pinNum,HIGH);
+    digitalWriteFast(pinNum,LOW);
+}
+
+inline void pulse_low(int pinNum) { // ---____---
+    digitalWriteFast(pinNum,LOW);
+    digitalWriteFast(pinNum,HIGH);
+}
+#else // use widely supported functions
 inline void pulse_high(int pinNum) { // ___----___
     digitalWrite(pinNum,HIGH);
     digitalWrite(pinNum,LOW);
@@ -283,27 +292,32 @@ inline void pulse_low(int pinNum) { // ---____---
     digitalWrite(pinNum,LOW);
     digitalWrite(pinNum,HIGH);
 }
+#endif
 
 inline void Tlc5948::pulseLatch() {
     pulse_high(LAT);
 }
 
 #if defined(__AVR_ATmega328P__) || defined(__AVR_ATmega328__)
+#warning "Using Arduino Nano SPI Bit Bang"
 inline void bitBangSpi1() {
     noInterrupts();
-    SPCR &= ~_BV(SPE); // disable hw SPI
 
-    // Bit bang a '0'
+    SPCR &= ~_BV(SPE); // disable hw SPI (SPI.begin() stops us from writing to MOSI)
+
+    // Bit bang a '1'
     PORTB |= 0b00001000; // set PB3/D11/MOSI high
     PORTB |= 0b00100000; // set PB5/D13/SCLK high
     PORTB &= 0b11011111; // set PB5/D13/SCLK low
 
     SPCR |= _BV(SPE); // restore hw SPI
+
     interrupts();
 }
 
 inline void bitBangSpi0() {
     noInterrupts();
+
     SPCR &= ~_BV(SPE); // disable hw SPI
 
     // Bit bang a '0'
@@ -312,7 +326,25 @@ inline void bitBangSpi0() {
     PORTB &= 0b11011111; // set PB5/D13/SCLK low
 
     SPCR |= _BV(SPE); // restore hw SPI
+
     interrupts();
+}
+
+inline void bitBang1() {
+
+    digitalWrite(SIN,HIGH);
+    digitalWrite(SCLK,HIGH);
+    digitalWrite(SCLK,LOW);
+    digitalWrite(SIN,LOW);
+
+}
+
+inline void bitBang0() {
+
+    digitalWrite(SIN,LOW);
+    digitalWrite(SCLK,HIGH);
+    digitalWrite(SCLK,LOW);
+
 }
 
 inline void Tlc5948::startBuiltinGsclk() {
@@ -356,32 +388,124 @@ inline void Tlc5948::startBuiltinGsclk() {
 inline void Tlc5948::stopBuiltinGsclk() {
     TCCR1A &= ~(_BV(COM1A1)); // disconnect A
 }
+#elif defined(ARDUINO_TEENSY40)
+inline void bitBangSpi1() {
+
+    SPI.end();
+    pinMode(SIN,OUTPUT);
+    pinMode(SCLK,OUTPUT);
+
+    digitalWriteFast(SIN,HIGH);
+    digitalWriteFast(SCLK,HIGH);
+    digitalWriteFast(SCLK,LOW);
+    digitalWriteFast(SIN,LOW);
+
+    SPI.begin(); // reenable SPI
+
+}
+
+inline void bitBangSpi0() {
+
+    SPI.end(); // disable SPI
+    pinMode(SIN,OUTPUT);
+    pinMode(SCLK,OUTPUT);
+
+
+    digitalWriteFast(SIN,LOW);
+    digitalWriteFast(SCLK,HIGH);
+    digitalWriteFast(SCLK,LOW);
+
+    SPI.begin(); // reenable SPI
+
+}
+
+inline void bitBang1() {
+
+    digitalWriteFast(SIN,HIGH);
+    digitalWriteFast(SCLK,HIGH);
+    digitalWriteFast(SCLK,LOW);
+    digitalWriteFast(SIN,LOW);
+
+}
+
+inline void bitBang0() {
+
+    digitalWriteFast(SIN,LOW);
+    digitalWriteFast(SCLK,HIGH);
+    digitalWriteFast(SCLK,LOW);
+
+}
+
+inline void Tlc5948::startBuiltinGsclk() {
+    analogWriteFrequency(GSCLK, 8000000); // 8Mhz clock should be fast enough
+    analogWrite(GSCLK,127);
+}
+
+inline void Tlc5948::stopBuiltinGsclk() {
+    analogWrite(GSCLK,0);
+}
+
 #else
-#error "Unsupported platform, feel free to add a PR on GitHub!"
+#warning "Non-tested platform, feel free to add a PR on GitHub!"
+inline void bitBangSpi1() {
+    SPI.end(); 
+
+    digitalWrite(SIN,HIGH);
+    digitalWrite(SCLK,HIGH);
+    digitalWrite(SCLK,LOW);
+    digitalWrite(SIN,LOW);
+
+    SPI.begin();
+}
+
+inline void bitBangSpi0() {
+    SPI.end();
+
+    digitalWrite(SIN,LOW);
+    digitalWrite(SCLK,HIGH);
+    digitalWrite(SCLK,LOW);
+
+    SPI.begin();
+}
+
+inline void bitBang1() {
+
+    digitalWrite(SIN,HIGH);
+    digitalWrite(SCLK,HIGH);
+    digitalWrite(SCLK,LOW);
+    digitalWrite(SIN,LOW);
+
+}
+
+inline void bitBang0() {
+
+    digitalWrite(SIN,LOW);
+    digitalWrite(SCLK,HIGH);
+    digitalWrite(SCLK,LOW);
+
+}
+
+inline void Tlc5948::startBuiltinGsclk() {
+    analogWrite(GSCLK,127);
+}
+
+inline void Tlc5948::stopBuiltinGsclk() {
+    analogWrite(GSCLK,0);
+}
 #endif
 
 inline void printBuf(uint8_t* buf, int size) {
     for (int i = 0; i < size; i++) {
         Serial.print("0x");
-        if (buf[i] < 15)
+        if (buf[i] <= 15)
             Serial.print("0");
         Serial.print(buf[i],HEX);
-        if (i % 8 == 0)
+        if (i % 8 == 7)
             Serial.println();
         else
             Serial.print(" ");
     }
     Serial.println();
-}
-
-
-inline void Tlc5948::printGsDataBuf() {
-    printBuf(gsDataBuf,32);
-}
-
-
-inline void Tlc5948::printSpiBuf() {
-    printBuf(spiBuf,32);
 }
 
 inline void Tlc5948::printCtrlDataBuf() {
@@ -391,4 +515,5 @@ inline void Tlc5948::printCtrlDataBuf() {
 inline Fctrls Tlc5948::getFctrlBits() {
     return funcControlBits;
 }
+
 #endif

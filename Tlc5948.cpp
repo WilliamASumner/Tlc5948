@@ -4,7 +4,6 @@ Tlc5948::Tlc5948() {
     sidStatus = SidFlags::NONE;
     funcControlBits = Fctrls::empty_bits;
     for (int i = 0; i < 32; i++) {
-        gsDataBuf[i] = 0;
         ctrlDataBuf[i] = 0;
     }
 }
@@ -50,21 +49,6 @@ void Tlc5948::setFctrlBits(Fctrls f) {
 
 }
 
-// greyscale, pwm data, 16 bits per channel
-// when blank bit of gs control reg is set (1), output is all 0's
-// blank is set to 1 on startup, must write gs data before setting blank to 0
-void Tlc5948::setGsData(Channels channelMask, uint16_t value) {
-    for (int i = NUM_CHANNELS-1; i >= 0; i--) {
-        if ((channelMask & Channels::out0) != Channels::out0) {
-            channelMask >>= 1;
-            continue;
-        }
-        gsDataBuf[i*2+1] = value & 0xFF;
-        gsDataBuf[i*2] = (value >> 8) & 0xFF;
-        channelMask >>= 1;
-    }
-}
-
 inline void copyBuf(void* inBuf, void* outBuf, unsigned int size) {
     uint8_t* inByteBuf = static_cast<uint8_t*>(inBuf);
     uint8_t* outByteBuf = static_cast<uint8_t*>(outBuf);
@@ -73,36 +57,52 @@ inline void copyBuf(void* inBuf, void* outBuf, unsigned int size) {
     }
 }
 
-// send data from either ctrl buff or gs data buff and read TLC5948 data
-void Tlc5948::exchangeData(DataKind type, uint8_t numTlcs = 1) {
-    SPI.beginTransaction(SPISettings(SPI_SPEED,BIT_ORDER,SPI_MODE));
+// send data from ctrl buff
+void Tlc5948::writeControlBuffer(uint8_t numTlcs) {
     for (uint8_t i = 0; i < numTlcs; i++) {
-        switch (type) {
-            case DataKind::gsdata:
-                copyBuf(gsDataBuf,spiBuf,32);
-                //SPI.transfer(0x0);
-
-                bitBangSpi0();
-
-                break;
-            case DataKind::ctrldata:
-                copyBuf(ctrlDataBuf,spiBuf,32);
-                //SPI.transfer(0x1);
-                
-                bitBangSpi1();
-
-                break;
-            default:
-                break;
+        bitBang1();
+        for (uint8_t j = 0; j < 32; j++ ) {
+            shiftOut(SIN,SCLK,BIT_ORDER,ctrlDataBuf[j]);
         }
-
-        SPI.transfer(spiBuf,32);
     }
-    SPI.endTransaction();
     pulseLatch(); // latch in the new data
 }
 
-SidFlags Tlc5948::getSidData(Channels& old, Channels& lsd, Channels& lod, bool refreshData) {
+// send data from gsdata buff
+void Tlc5948::writeGsBuffer(uint8_t* buf, uint16_t numBytes, bool padding) {
+    for (int i = 0; i < numBytes; i++) {
+        if (i % 32 == 0) bitBang0();
+        shiftOut(SIN,SCLK,BIT_ORDER,buf[i]);
+    }
+
+    if (padding) {
+        for (int i = 0; i < 32 - (numBytes % 32); i++) {
+            shiftOut(SIN,SCLK,BIT_ORDER,0);
+        }
+    }
+    pulseLatch();
+}
+
+// write an empty GS data buffer (good for initializing)
+void Tlc5948::emptyGsBuffer(uint16_t numBytes) {
+    for (int i = 0; i < numBytes; i++) {
+        if (i % 32 == 0) bitBang0();
+        shiftOut(SIN,SCLK,BIT_ORDER,0);
+    }
+    pulseLatch();
+}
+
+// write a  GS data buffer with all one value (for a test blink)
+void Tlc5948::fillGsBuffer(uint16_t numBytes, uint8_t val) {
+    for (int i = 0; i < numBytes; i++) {
+        if (i % 32 == 0) bitBang0();
+        shiftOut(SIN,SCLK,BIT_ORDER,val);
+    }
+    pulseLatch();
+}
+
+// Need to find a way to unify shiftOut cmd and shiftIn to read back data
+/*SidFlags Tlc5948::getSidData(Channels& old, Channels& lsd, Channels& lod, bool refreshData) {
     if (refreshData) {
         exchangeData(DataKind::gsdata); // re-push in gsdata, pulling SidData out into spiBuf
         int delayMs = 0;
@@ -172,24 +172,22 @@ SidFlags Tlc5948::getSidData(Channels& old, Channels& lsd, Channels& lod, bool r
         }
     }
     return flags;
-}
+}*/
 
 void Tlc5948::begin() {
     // Note: driver must first send gs + dc/bc/fctrl data before it will turn on
     // this function just gets the buffers ready, 2+ calls to writeData are needed
     // to actually start the chip
 
-    SPI.begin();
-
     // pin assignments
-    pinMode(SSEL,OUTPUT); // slave select output -> prevent SPI slave mode
     pinMode(SIN,OUTPUT); // MOSI -> data to TLC5948
     pinMode(SOUT,INPUT);  // MISO -> data from TLC5948
     pinMode(SCLK,OUTPUT);  // SCLK -> SPI clk
+
+    pinMode(SSEL,OUTPUT); // slave select output -> prevent SPI slave mode
     pinMode(LAT,OUTPUT);   // latch control
     pinMode(GSCLK,OUTPUT); // PWM clock
 
-    setGsData(Channels::all,0xFFFF); // 100% brightness
     setDcData(Channels::all,0x7f); // all dot correction to 100%
     setBcData(0x7f); // global brightness to max
 
@@ -211,7 +209,7 @@ void Tlc5948::begin() {
 
 void Tlc5948::readDeviceContents(uint8_t *bytes, int numBytes) {
     for (int i = 0; i < numBytes; i++) {
-        bytes[i] = SPI.transfer(0x0);
+        bytes[i] = shiftIn(SOUT,SCLK,BIT_ORDER);
     }
 }
 
