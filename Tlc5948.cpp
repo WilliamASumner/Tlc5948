@@ -57,12 +57,69 @@ inline void copyBuf(void* inBuf, void* outBuf, unsigned int size) {
     }
 }
 
+void Tlc5948::writeControlBufferSPI(uint8_t numTlcs) {
+    SPI.beginTransaction(SPISettings(SPI_SPEED,TLC5948_BIT_ORDER,TLC5948_SPI_MODE));
+    if (numTlcs == 0)
+        return;
+    // MSB (sent first) [   32 byte arr    ] LSB 
+    // example with 3 tlcs: [padding to byte] 1 [ 32 ] 1 [ 32 ] 1 [ 32 ]
+    uint8_t byteToWrite = 0x0;
+    for (uint8_t i = numTlcs; i > 1; i--) {
+        uint8_t shiftOffset = i % 8; // how much to shift by to add next bits
+        // At the start of each TLC, write out the leading '1'
+        byteToWrite |= 0x1 << (shiftOffset - 1);
+        for (uint8_t j = 0; j < 32; j++) {
+            byteToWrite |= ctrlDataBuf[j] >> (9 - shiftOffset);
+            SPI.transfer(byteToWrite);
+            byteToWrite = ctrlDataBuf[j] << (shiftOffset - 1);
+        }
+    }
+    byteToWrite |= 0x1; SPI.transfer(byteToWrite); // write out last byte
+
+    for (uint8_t j = 0; j < 32; j++) { // last 32 bytes will be byte-aligned
+        SPI.transfer(ctrlDataBuf[j]);
+    }
+    SPI.endTransaction();
+    pulseLatch();
+}
+
+// write to Gs buffer with SPI
+void Tlc5948::writeGsBufferSPI16(uint16_t* buf, uint16_t numVals, uint8_t numTlcs) { // buffer with correct endianness for 16bit values
+    SPI.beginTransaction(SPISettings(SPI_SPEED,TLC5948_BIT_ORDER,TLC5948_SPI_MODE));
+    if (numTlcs == 0 && numVals % 32 != 0) // don't accept weird input
+        return;
+    // MSB (sent first) [   32 byte arr    ] LSB 
+    // example with 3 tlcs: [padding to byte] 1 [ 32 ] 1 [ 32 ] 1 [ 32 ]
+    if (numTlcs == 0) numTlcs = numVals / 32; // have to calculate number of Tlcs
+    uint16_t valToWrite = 0x0;
+    uint16_t currVal = 0;
+    for (uint8_t i = numTlcs; i > 1; i--) {
+        uint8_t shiftOffset = i % 8; // how much to shift by to add next bits
+        // At the start of each TLC, write out the leading '1'
+        //valToWrite |= 0x1 << (shiftOffset - 1);
+        for (uint8_t j = 0; j < 16; j++) {
+            valToWrite |= buf[currVal] >> (17 - shiftOffset);
+            SPI.transfer16(valToWrite);
+            valToWrite = buf[currVal] << (shiftOffset - 1);
+            currVal = (currVal + 1) % numVals;
+        }
+    }
+    //valToWrite |= 0x1;
+    SPI.transfer16(valToWrite); // write out last byte
+    for (uint8_t j = 0; j < 16; j++) { // last 16 values will be aligned
+        SPI.transfer16(buf[currVal]);
+        currVal = (currVal + 1) % numVals;
+    }
+    SPI.endTransaction();
+    pulseLatch();
+}
+
 // send data from ctrl buff
 void Tlc5948::writeControlBuffer(uint8_t numTlcs) {
     for (uint8_t i = 0; i < numTlcs; i++) {
         bitBang1();
         for (uint8_t j = 0; j < 32; j++ ) {
-            shiftOut(SIN,SCLK,BIT_ORDER,ctrlDataBuf[j]);
+            shiftOut(SIN,SCLK,TLC5948_BIT_ORDER,ctrlDataBuf[j]);
         }
     }
     pulseLatch(); // latch in the new data
@@ -72,12 +129,12 @@ void Tlc5948::writeControlBuffer(uint8_t numTlcs) {
 void Tlc5948::writeGsBuffer(uint8_t* buf, uint16_t numBytes, bool padding) {
     for (int i = 0; i < numBytes; i++) {
         if (i % 32 == 0) bitBang0();
-        shiftOut(SIN,SCLK,BIT_ORDER,buf[i]);
+        shiftOut(SIN,SCLK,TLC5948_BIT_ORDER,buf[i]);
     }
 
     if (padding) {
         for (int i = 0; i < 32 - (numBytes % 32); i++) {
-            shiftOut(SIN,SCLK,BIT_ORDER,0);
+            shiftOut(SIN,SCLK,TLC5948_BIT_ORDER,0);
         }
     }
     pulseLatch();
@@ -87,7 +144,7 @@ void Tlc5948::writeGsBuffer(uint8_t* buf, uint16_t numBytes, bool padding) {
 void Tlc5948::emptyGsBuffer(uint16_t numBytes) {
     for (int i = 0; i < numBytes; i++) {
         if (i % 32 == 0) bitBang0();
-        shiftOut(SIN,SCLK,BIT_ORDER,0);
+        shiftOut(SIN,SCLK,TLC5948_BIT_ORDER,0);
     }
     pulseLatch();
 }
@@ -96,7 +153,7 @@ void Tlc5948::emptyGsBuffer(uint16_t numBytes) {
 void Tlc5948::fillGsBuffer(uint16_t numBytes, uint8_t val) {
     for (int i = 0; i < numBytes; i++) {
         if (i % 32 == 0) bitBang0();
-        shiftOut(SIN,SCLK,BIT_ORDER,val);
+        shiftOut(SIN,SCLK,TLC5948_BIT_ORDER,val);
     }
     pulseLatch();
 }
@@ -174,15 +231,17 @@ void Tlc5948::fillGsBuffer(uint16_t numBytes, uint8_t val) {
     return flags;
 }*/
 
-void Tlc5948::begin() {
+void Tlc5948::begin(bool usingSPI) {
     // Note: driver must first send gs + dc/bc/fctrl data before it will turn on
     // this function just gets the buffers ready, 2+ calls to writeData are needed
     // to actually start the chip
 
     // pin assignments
-    pinMode(SIN,OUTPUT); // MOSI -> data to TLC5948
-    pinMode(SOUT,INPUT);  // MISO -> data from TLC5948
-    pinMode(SCLK,OUTPUT);  // SCLK -> SPI clk
+    if (!usingSPI) {
+        pinMode(SIN,OUTPUT); // MOSI -> data to TLC5948
+        pinMode(SOUT,INPUT);  // MISO -> data from TLC5948
+        pinMode(SCLK,OUTPUT);  // SCLK -> SPI clk
+    }
 
     pinMode(SSEL,OUTPUT); // slave select output -> prevent SPI slave mode
     pinMode(LAT,OUTPUT);   // latch control
@@ -209,7 +268,7 @@ void Tlc5948::begin() {
 
 void Tlc5948::readDeviceContents(uint8_t *bytes, int numBytes) {
     for (int i = 0; i < numBytes; i++) {
-        bytes[i] = shiftIn(SOUT,SCLK,BIT_ORDER);
+        bytes[i] = shiftIn(SOUT,SCLK,TLC5948_BIT_ORDER);
     }
 }
 

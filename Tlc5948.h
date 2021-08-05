@@ -22,9 +22,9 @@ const int SCLK = 13;  // HW SCLK, using D13
 #endif // ifdef ARDUINO_TEENSY40
 
 // SPI settings
-const uint32_t SPI_SPEED = 1000000;// 33mhz listed on data sheet, 1Mhz seems to work
-const unsigned int BIT_ORDER = MSBFIRST;
-const unsigned int SPI_MODE = SPI_MODE0;
+const uint32_t SPI_SPEED = 20000000;// 33mhz listed on data sheet, 1Mhz seems to work
+const unsigned int TLC5948_BIT_ORDER = MSBFIRST;
+const unsigned int TLC5948_SPI_MODE = SPI_MODE0;
 const int NUM_CHANNELS = 16;
 const uint32_t PWM_FREQ = 8000000; // max speed from fast PWM mode
 const uint16_t MAX_BRIGHTNESS = 0xffff;
@@ -246,9 +246,11 @@ class Tlc5948 {
         //void exchangeData(DataKind, uint8_t numTlcs = 1); // SPI mode
         void writeControlBuffer(uint8_t numTlcs = 1);
         void writeGsBuffer(uint8_t*buff, uint16_t numBytes, bool = false);
+        void writeControlBufferSPI(uint8_t numTlcs);
+        void writeGsBufferSPI16(uint16_t* buf, uint16_t numVals, uint8_t numTlcs = 0);
         void emptyGsBuffer(uint16_t numBytes);
         void fillGsBuffer(uint16_t numBytes, uint8_t val);
-        SidFlags getSidData(Channels&,Channels&,Channels&,bool = false);
+        //SidFlags getSidData(Channels&,Channels&,Channels&,bool = false);
 
         void startBuiltinGsclk();
         void stopBuiltinGsclk();
@@ -258,7 +260,7 @@ class Tlc5948 {
         void printSpiBuf();
         void printCtrlDataBuf();
 
-        void begin(void);
+        void begin(bool usingSPI = false);
 
         void readDeviceContents(uint8_t*,int);
 
