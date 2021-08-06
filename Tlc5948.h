@@ -274,7 +274,7 @@ class Tlc5948 {
 };
 
 #if ARDUINO_TEENSY40
-// use fast versions 
+// use digitalWriteFast if available
 inline void pulse_high(int pinNum) { // ___----___
     digitalWriteFast(pinNum,HIGH);
     digitalWriteFast(pinNum,LOW);
@@ -284,6 +284,45 @@ inline void pulse_low(int pinNum) { // ---____---
     digitalWriteFast(pinNum,LOW);
     digitalWriteFast(pinNum,HIGH);
 }
+
+// add SPI enable/disable
+inline void disableSPI() {
+    // SIN/MOSI -> pin 11 -> GPIO7_02 -> (from Teensy 4.0 Hypothetical assignment) -> B0_02
+    // SOUT/MISO -> pin 12  -> GPIO7_01 -> ... -> B0_01
+    // SCLK/SCKs -> pin 13 -> GPIO7_03 -> ... -> B0_03
+
+    // MOSI control, pin 11
+    IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_02 &= 0xFFF0; // zero out last bits
+    IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_02 |= 0x0005; // ALT5 - GPIO2_IOO2 - GPIO2 page 510
+
+    // MISO control, pin 12
+    IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_01 &= 0xFFF0; // zero out last bits
+    IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_01 |= 0x0005; // ALT5 - GPIO2_IOO2 - GPIO2 page 509
+
+    // SCLK control, pin 13
+    IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_03 &= 0xFFF0; // zero out last bits
+    IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_03 |= 0x0005; // ALT5 - GPIO2_IOO2 - GPIO2 page 511
+}
+
+inline void enableSPI() {
+    // SIN/MOSI -> pin 11 -> GPIO7_02 -> (from Teensy 4.0 Hypothetical assignment) -> B0_02
+    // SOUT/MISO -> pin 12  -> GPIO7_01 -> ... -> B0_01
+    // SCLK/SCKs -> pin 13 -> GPIO7_03 -> ... -> B0_03
+
+    // MOSI control, pin 11
+    IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_02 &= 0xFFF0; // zero out last bits
+    IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_02 |= 0x0003; // ALT5 - GPIO2_IOO2 - GPIO2 page 510
+
+    // MISO control, pin 12
+    IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_01 &= 0xFFF0; // zero out last bits
+    IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_01 |= 0x0003; // ALT5 - GPIO2_IOO2 - GPIO2 page 509
+
+    // SCLK control, pin 13
+    IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_03 &= 0xFFF0; // zero out last bits
+    IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_03 |= 0x0003; // ALT5 - GPIO2_IOO2 - GPIO2 page 511
+}
+
+
 #else // use widely supported functions
 inline void pulse_high(int pinNum) { // ___----___
     digitalWrite(pinNum,HIGH);
@@ -447,7 +486,7 @@ inline void Tlc5948::stopBuiltinGsclk() {
     analogWrite(GSCLK,0);
 }
 
-#else
+#else // untested platform
 #warning "Non-tested platform, feel free to add a PR on GitHub!"
 inline void bitBangSpi1() {
     SPI.end(); 
@@ -494,7 +533,7 @@ inline void Tlc5948::startBuiltinGsclk() {
 inline void Tlc5948::stopBuiltinGsclk() {
     analogWrite(GSCLK,0);
 }
-#endif
+#endif //untested platform
 
 inline void printBuf(uint8_t* buf, int size) {
     for (int i = 0; i < size; i++) {
@@ -518,4 +557,4 @@ inline Fctrls Tlc5948::getFctrlBits() {
     return funcControlBits;
 }
 
-#endif
+#endif // ifdef TLC5948_LIB_H
