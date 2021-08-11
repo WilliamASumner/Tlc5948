@@ -1,6 +1,5 @@
 #ifndef TLC5948_LIB_H
 #define TLC5948_LIB_H
-#include "TlcHelperTypes.h"
 #include <SPI.h>
 //#include <util/atomic.h>
 
