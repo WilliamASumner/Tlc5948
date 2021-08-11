@@ -5,7 +5,7 @@
 
 // pin assignments; todo replace with enum maybe
 #ifdef ARDUINO_TEENSY40 // Teensy version
-#warning "Using Teensy Pin Definitions"
+//#warning "Using Teensy Pin Definitions"
 const int LAT = 7;   // latch control
 const int GSCLK = 2; // pwm clock, using pin 2
 const int SSEL = 10; // slave select, HW SS, not needed
@@ -13,7 +13,7 @@ const int SIN = 11;   // serial data input (to Tlc5948)
 const int SOUT = 12;  // serial data output (from Tlc5948) 
 const int SCLK = 13;  // serial data clock
 #else // assume Arduino Nano
-#warning "Using Arduino Nano Pin Definitions"
+//#warning "Using Arduino Nano Pin Definitions"
 const int LAT = 3;   // latch control, using D3
 const int GSCLK = 9; // pwm clock, using D9 w/Fast PWM (~8Mhz)
 const int SSEL = 10; // slave select, HW SS, not needed
