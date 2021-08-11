@@ -58,7 +58,7 @@ inline void copyBuf(void* inBuf, void* outBuf, unsigned int size) {
 }
 
 void Tlc5948::writeControlBufferSPI(uint8_t numTlcs) {
-    SPI.beginTransaction(SPISettings(SPI_SPEED,TLC5948_BIT_ORDER,TLC5948_SPI_MODE));
+    SPI.beginTransaction(SPISettings(TLC5948_SPI_SPEED,TLC5948_BIT_ORDER,TLC5948_SPI_MODE));
     if (numTlcs == 0)
         return;
     // MSB (sent first) [   32 byte arr    ] LSB 
@@ -79,15 +79,31 @@ void Tlc5948::writeControlBufferSPI(uint8_t numTlcs) {
     for (uint8_t j = 0; j < 32; j++) { // last 32 bytes will be byte-aligned
         SPI.transfer(ctrlDataBuf[j]);
     }
-    SPI.endTransaction();
     pulseLatch();
+    SPI.endTransaction();
+}
+
+// send data from ctrl buff
+void Tlc5948::writeControlBuffer(uint8_t numTlcs) {
+    //ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+    disableSPI();
+    for (uint8_t i = 0; i < numTlcs; i++) {
+        bitBang1();
+        for (uint8_t j = 0; j < 32; j++ ) {
+            shiftOut(SIN,SCLK,TLC5948_BIT_ORDER,ctrlDataBuf[j]);
+        }
+    }
+    pulseLatch(); // latch in the new data
+    enableSPI();
 }
 
 // write to Gs buffer with SPI
 void Tlc5948::writeGsBufferSPI16(uint16_t* buf, uint16_t numVals, uint8_t numTlcs) { // buffer with correct endianness for 16bit values
-    SPI.beginTransaction(SPISettings(SPI_SPEED,TLC5948_BIT_ORDER,TLC5948_SPI_MODE));
+    //ATOMIC_BLOCK(ATOMIC_RESTORESTATE) // make this function atomic
     if (numTlcs == 0 && numVals % 32 != 0) // don't accept weird input that would require padding
         return;
+
+    SPI.beginTransaction(SPISettings(TLC5948_SPI_SPEED,TLC5948_BIT_ORDER,TLC5948_SPI_MODE));
     if (numTlcs == 0) numTlcs = numVals / 32; // if just using numVals, have to calculate number of Tlcs
     uint16_t valToWrite = 0x0;
     uint16_t currVal = 0;
@@ -105,56 +121,29 @@ void Tlc5948::writeGsBufferSPI16(uint16_t* buf, uint16_t numVals, uint8_t numTlc
         SPI.transfer16(buf[currVal]);
         currVal = (currVal + 1) % numVals;
     }
-    SPI.endTransaction();
     pulseLatch();
-}
-
-// send data from ctrl buff
-void Tlc5948::writeControlBuffer(uint8_t numTlcs) {
-    disableSPI();
-    for (uint8_t i = 0; i < numTlcs; i++) {
-        bitBang1();
-        for (uint8_t j = 0; j < 32; j++ ) {
-            shiftOut(SIN,SCLK,TLC5948_BIT_ORDER,ctrlDataBuf[j]);
-        }
-    }
-    pulseLatch(); // latch in the new data
-    enableSPI();
+    SPI.endTransaction();
 }
 
 // send data from gsdata buff
-void Tlc5948::writeGsBuffer(uint8_t* buf, uint16_t numBytes, bool padding) {
-    disableSPI();
-    for (int i = 0; i < numBytes; i++) {
-        if (i % 32 == 0) bitBang0();
-        shiftOut(SIN,SCLK,TLC5948_BIT_ORDER,buf[i]);
-    }
+void Tlc5948::writeGsBuffer16(uint16_t* buf, uint16_t numVals, uint8_t numTlcs) {
+    //ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+    if (numTlcs == 0 && numVals % 32 != 0) // don't accept weird input that would require padding
+        return;
+    if (numTlcs == 0) numTlcs = numVals / 32; // if just using numVals, have to calculate number of Tlcs
 
-    if (padding) {
-        for (int i = 0; i < 32 - (numBytes % 32); i++) {
-            shiftOut(SIN,SCLK,TLC5948_BIT_ORDER,0);
+    disableSPI();
+    uint16_t valIndex = 0;
+    for (uint8_t i = 0; i < numTlcs; i++) {
+        bitBang0();
+        for (uint8_t j = 0; j < 16; j++) {
+            shiftOut(SIN,SCLK,TLC5948_BIT_ORDER,buf[valIndex] & 0xff);
+            shiftOut(SIN,SCLK,TLC5948_BIT_ORDER,buf[valIndex] >> 8);
+            valIndex = (valIndex + 1) % numVals;
         }
     }
     pulseLatch();
     enableSPI();
-}
-
-// write an empty GS data buffer (good for initializing)
-void Tlc5948::emptyGsBuffer(uint16_t numBytes) {
-    for (int i = 0; i < numBytes; i++) {
-        if (i % 32 == 0) bitBang0();
-        shiftOut(SIN,SCLK,TLC5948_BIT_ORDER,0);
-    }
-    pulseLatch();
-}
-
-// write a  GS data buffer with all one value (for a test blink)
-void Tlc5948::fillGsBuffer(uint16_t numBytes, uint8_t val) {
-    for (int i = 0; i < numBytes; i++) {
-        if (i % 32 == 0) bitBang0();
-        shiftOut(SIN,SCLK,TLC5948_BIT_ORDER,val);
-    }
-    pulseLatch();
 }
 
 // Need to find a way to unify shiftOut cmd and shiftIn to read back data

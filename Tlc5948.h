@@ -1,6 +1,8 @@
 #ifndef TLC5948_LIB_H
 #define TLC5948_LIB_H
+#include "TlcHelperTypes.h"
 #include <SPI.h>
+//#include <util/atomic.h>
 
 // pin assignments; todo replace with enum maybe
 #ifdef ARDUINO_TEENSY40 // Teensy version
@@ -22,7 +24,7 @@ const int SCLK = 13;  // HW SCLK, using D13
 #endif // ifdef ARDUINO_TEENSY40
 
 // SPI settings
-const uint32_t SPI_SPEED = 20000000;// 33mhz listed on data sheet, 1Mhz seems to work
+const uint32_t TLC5948_SPI_SPEED = 25000000;// 33mhz listed on data sheet, 25Mhz seems to work
 const unsigned int TLC5948_BIT_ORDER = MSBFIRST;
 const unsigned int TLC5948_SPI_MODE = SPI_MODE0;
 const int NUM_CHANNELS = 16;
@@ -237,6 +239,7 @@ inline void printFctrls(Fctrls f) {
     Serial.println((f & Fctrls::psmode_mask)>>15,HEX);
 }
 
+
 class Tlc5948 {
     public:
         void setDcData(Channels,uint8_t);
@@ -244,12 +247,12 @@ class Tlc5948 {
         void setFctrlBits(Fctrls);
 
         //void exchangeData(DataKind, uint8_t numTlcs = 1); // SPI mode
+        void writeControlBufferSPI(uint8_t numTlcs = 1);
         void writeControlBuffer(uint8_t numTlcs = 1);
-        void writeGsBuffer(uint8_t*buff, uint16_t numBytes, bool = false);
-        void writeControlBufferSPI(uint8_t numTlcs);
+
         void writeGsBufferSPI16(uint16_t* buf, uint16_t numVals, uint8_t numTlcs = 0);
-        void emptyGsBuffer(uint16_t numBytes);
-        void fillGsBuffer(uint16_t numBytes, uint8_t val);
+        void writeGsBuffer16(uint16_t*buf, uint16_t numBytes, uint8_t numTlcs = 0);
+
         //SidFlags getSidData(Channels&,Channels&,Channels&,bool = false);
 
         void startBuiltinGsclk();
@@ -285,44 +288,6 @@ inline void pulse_low(int pinNum) { // ---____---
     digitalWriteFast(pinNum,HIGH);
 }
 
-// add SPI enable/disable
-inline void disableSPI() {
-    // SIN/MOSI -> pin 11 -> GPIO7_02 -> (from Teensy 4.0 Hypothetical assignment) -> B0_02
-    // SOUT/MISO -> pin 12  -> GPIO7_01 -> ... -> B0_01
-    // SCLK/SCKs -> pin 13 -> GPIO7_03 -> ... -> B0_03
-
-    // MOSI control, pin 11
-    IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_02 &= 0xFFF0; // zero out last bits
-    IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_02 |= 0x0005; // ALT5 - GPIO2_IOO2 - GPIO2 page 510
-
-    // MISO control, pin 12
-    IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_01 &= 0xFFF0; // zero out last bits
-    IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_01 |= 0x0005; // ALT5 - GPIO2_IOO2 - GPIO2 page 509
-
-    // SCLK control, pin 13
-    IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_03 &= 0xFFF0; // zero out last bits
-    IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_03 |= 0x0005; // ALT5 - GPIO2_IOO2 - GPIO2 page 511
-}
-
-inline void enableSPI() {
-    // SIN/MOSI -> pin 11 -> GPIO7_02 -> (from Teensy 4.0 Hypothetical assignment) -> B0_02
-    // SOUT/MISO -> pin 12  -> GPIO7_01 -> ... -> B0_01
-    // SCLK/SCKs -> pin 13 -> GPIO7_03 -> ... -> B0_03
-
-    // MOSI control, pin 11
-    IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_02 &= 0xFFF0; // zero out last bits
-    IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_02 |= 0x0003; // ALT5 - GPIO2_IOO2 - GPIO2 page 510
-
-    // MISO control, pin 12
-    IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_01 &= 0xFFF0; // zero out last bits
-    IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_01 |= 0x0003; // ALT5 - GPIO2_IOO2 - GPIO2 page 509
-
-    // SCLK control, pin 13
-    IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_03 &= 0xFFF0; // zero out last bits
-    IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_03 |= 0x0003; // ALT5 - GPIO2_IOO2 - GPIO2 page 511
-}
-
-
 #else // use widely supported functions
 inline void pulse_high(int pinNum) { // ___----___
     digitalWrite(pinNum,HIGH);
@@ -339,35 +304,18 @@ inline void Tlc5948::pulseLatch() {
     pulse_high(LAT);
 }
 
+// SPI Bit Banging
 #if defined(__AVR_ATmega328P__) || defined(__AVR_ATmega328__)
-#warning "Using Arduino Nano SPI Bit Bang"
-inline void bitBangSpi1() {
-    noInterrupts();
-
+inline void disableSPI() {
+    noInterrupts(); // disable interrupts to avoid register corruption
     SPCR &= ~_BV(SPE); // disable hw SPI (SPI.begin() stops us from writing to MOSI)
-
-    // Bit bang a '1'
-    PORTB |= 0b00001000; // set PB3/D11/MOSI high
-    PORTB |= 0b00100000; // set PB5/D13/SCLK high
-    PORTB &= 0b11011111; // set PB5/D13/SCLK low
-
-    SPCR |= _BV(SPE); // restore hw SPI
-
     interrupts();
+
 }
 
-inline void bitBangSpi0() {
-    noInterrupts();
-
-    SPCR &= ~_BV(SPE); // disable hw SPI
-
-    // Bit bang a '0'
-    PORTB &= 0b11110111; // set PB3/D11/MOSI low
-    PORTB |= 0b00100000; // set PB5/D13/SCLK high
-    PORTB &= 0b11011111; // set PB5/D13/SCLK low
-
+inline void enableSPI() {
+    noInterrupts(); // disable interrupts to avoid register corruption
     SPCR |= _BV(SPE); // restore hw SPI
-
     interrupts();
 }
 
@@ -430,35 +378,44 @@ inline void Tlc5948::stopBuiltinGsclk() {
     TCCR1A &= ~(_BV(COM1A1)); // disconnect A
 }
 #elif defined(ARDUINO_TEENSY40)
-inline void bitBangSpi1() {
+// add SPI enable/disable
+inline void disableSPI() {
+    // SIN/MOSI -> pin 11 -> GPIO7_02 -> (from Teensy 4.0 Hypothetical assignment) -> B0_02
+    // SOUT/MISO -> pin 12  -> GPIO7_01 -> ... -> B0_01
+    // SCLK/SCKs -> pin 13 -> GPIO7_03 -> ... -> B0_03
+    // Basically we're just changing the corresponding IOMUX register to point to GPIO instead of SPI (LPSPI4) module
 
-    SPI.end();
-    pinMode(SIN,OUTPUT);
-    pinMode(SCLK,OUTPUT);
+    // MOSI control, pin 11
+    IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_02 &= 0xFFF0; // zero out last bits
+    IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_02 |= 0x0005; // ALT5 - GPIO2_IOO2 - GPIO2 page 510
 
-    digitalWriteFast(SIN,HIGH);
-    digitalWriteFast(SCLK,HIGH);
-    digitalWriteFast(SCLK,LOW);
-    digitalWriteFast(SIN,LOW);
+    // MISO control, pin 12
+    IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_01 &= 0xFFF0; // zero out last bits
+    IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_01 |= 0x0005; // ALT5 - GPIO2_IOO2 - GPIO2 page 509
 
-    SPI.begin(); // reenable SPI
-
+    // SCLK control, pin 13
+    IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_03 &= 0xFFF0; // zero out last bits
+    IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_03 |= 0x0005; // ALT5 - GPIO2_IOO2 - GPIO2 page 511
 }
 
-inline void bitBangSpi0() {
+inline void enableSPI() {
+    // SIN/MOSI -> pin 11 -> GPIO7_02 -> (from Teensy 4.0 Hypothetical assignment) -> B0_02
+    // SOUT/MISO -> pin 12  -> GPIO7_01 -> ... -> B0_01
+    // SCLK/SCKs -> pin 13 -> GPIO7_03 -> ... -> B0_03
 
-    SPI.end(); // disable SPI
-    pinMode(SIN,OUTPUT);
-    pinMode(SCLK,OUTPUT);
+    // MOSI control, pin 11
+    IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_02 &= 0xFFF0; // zero out last bits
+    IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_02 |= 0x0003; // ALT5 - GPIO2_IOO2 - GPIO2 page 510
 
+    // MISO control, pin 12
+    IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_01 &= 0xFFF0; // zero out last bits
+    IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_01 |= 0x0003; // ALT5 - GPIO2_IOO2 - GPIO2 page 509
 
-    digitalWriteFast(SIN,LOW);
-    digitalWriteFast(SCLK,HIGH);
-    digitalWriteFast(SCLK,LOW);
-
-    SPI.begin(); // reenable SPI
-
+    // SCLK control, pin 13
+    IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_03 &= 0xFFF0; // zero out last bits
+    IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_03 |= 0x0003; // ALT5 - GPIO2_IOO2 - GPIO2 page 511
 }
+
 
 inline void bitBang1() {
 
@@ -486,27 +443,20 @@ inline void Tlc5948::stopBuiltinGsclk() {
     analogWrite(GSCLK,0);
 }
 
-#else // untested platform
+#else // untested platform, fallback functions
 #warning "Non-tested platform, feel free to add a PR on GitHub!"
-inline void bitBangSpi1() {
-    SPI.end(); 
-
-    digitalWrite(SIN,HIGH);
-    digitalWrite(SCLK,HIGH);
-    digitalWrite(SCLK,LOW);
-    digitalWrite(SIN,LOW);
-
-    SPI.begin();
+inline void disableSPI() {
+    SPI.end();
+    pinMode(SIN,OUTPUT);
+    pinMode(SCLK,OUTPUT);
+    pinMode(SOUT,INPUT);
 }
 
-inline void bitBangSpi0() {
+inline void enableSPI() {
     SPI.end();
-
-    digitalWrite(SIN,LOW);
-    digitalWrite(SCLK,HIGH);
-    digitalWrite(SCLK,LOW);
-
-    SPI.begin();
+    pinMode(SIN,OUTPUT);
+    pinMode(SCLK,OUTPUT);
+    pinMode(SOUT,INPUT);
 }
 
 inline void bitBang1() {
@@ -526,6 +476,8 @@ inline void bitBang0() {
 
 }
 
+// this function may be a source of trouble if
+// GSCLK default frequency is too low (3KHz is around the minimum)
 inline void Tlc5948::startBuiltinGsclk() {
     analogWrite(GSCLK,127);
 }
