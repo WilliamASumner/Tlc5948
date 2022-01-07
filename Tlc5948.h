@@ -1,6 +1,7 @@
 #ifndef TLC5948_LIB_H
 #define TLC5948_LIB_H
 #include <SPI.h>
+#define ARDUINO_TEENSY40
 //#include <util/atomic.h>
 
 // pin assignments; todo replace with enum maybe
@@ -246,11 +247,11 @@ class Tlc5948 {
         void setFctrlBits(Fctrls);
 
         //void exchangeData(DataKind, uint8_t numTlcs = 1); // SPI mode
-        void writeControlBufferSPI(uint8_t numTlcs = 1);
-        void writeControlBuffer(uint8_t numTlcs = 1);
+        void writeControlBufferSPI();
+        void writeControlBuffer();
 
-        void writeGsBufferSPI16(uint16_t* buf, uint16_t numVals, uint8_t numTlcs = 0);
-        void writeGsBuffer16(uint16_t*buf, uint16_t numBytes, uint8_t numTlcs = 0);
+        void writeGsBufferSPI16(uint16_t* buf, uint16_t numVals);
+        void writeGsBuffer16(uint16_t*buf, uint16_t numBytes);
 
         //SidFlags getSidData(Channels&,Channels&,Channels&,bool = false);
 
@@ -262,7 +263,7 @@ class Tlc5948 {
         void printSpiBuf();
         void printCtrlDataBuf();
 
-        void begin(bool usingSPI = false);
+        void begin(bool usingSPI = false, uint8_t numTlcs = 1);
 
         void readDeviceContents(uint8_t*,int);
 
@@ -271,11 +272,12 @@ class Tlc5948 {
     private:
         SidFlags sidStatus;
         Fctrls funcControlBits;
+        uint8_t numTlcs;
         uint8_t ctrlDataBuf[32] = { 0 };
 
 };
 
-#if ARDUINO_TEENSY40
+#ifdef ARDUINO_TEENSY40
 // use digitalWriteFast if available
 inline void pulse_high(int pinNum) { // ___----___
     digitalWriteFast(pinNum,HIGH);
