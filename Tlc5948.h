@@ -1,7 +1,6 @@
 #ifndef TLC5948_LIB_H
 #define TLC5948_LIB_H
 #include <SPI.h>
-#define ARDUINO_TEENSY40
 //#include <util/atomic.h>
 
 // pin assignments; todo replace with enum maybe
